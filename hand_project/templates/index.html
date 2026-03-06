@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<title>Neon Hand Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;font-family:'Share Tech Mono',monospace;cursor:none;}
+
+#bg-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+#hand-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:1;pointer-events:none;}
+#draw-canvas{position:fixed;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}
+
+.ui{position:fixed;inset:0;z-index:3;pointer-events:none;}
+.ui *{pointer-events:auto;}
+
+#cursor{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-50%);transition:left .03s,top .03s;}
+.cur-outer{width:26px;height:26px;border-radius:50%;border:1.5px solid rgba(0,255,220,.9);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);transition:all .15s;}
+.cur-inner{width:5px;height:5px;border-radius:50%;background:#00ffdc;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px #00ffdc;}
+#cursor.pinching .cur-outer{border-color:#ff00aa;transform:translate(-50%,-50%) scale(.45);}
+#cursor.pinching .cur-inner{background:#ff00aa;box-shadow:0 0 10px #ff00aa;transform:translate(-50%,-50%) scale(2);}
+
+.sys-panel{position:absolute;top:20px;left:20px;border:1px solid rgba(0,255,220,.3);background:rgba(0,0,0,.55);padding:10px 14px;min-width:170px;backdrop-filter:blur(4px);}
+.sys-label{font-size:.5rem;color:rgba(0,255,220,.45);letter-spacing:3px;margin-bottom:3px;}
+.sys-status{font-size:.85rem;color:#00ffdc;text-shadow:0 0 10px #00ffdc;letter-spacing:1px;}
+
+.mode-bar{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;}
+.mode-btn{border:1px solid;padding:8px 20px;font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:2px;cursor:pointer;transition:all .2s;background:rgba(0,0,0,.5);text-transform:uppercase;}
+.mode-btn.draw{color:#00ffdc;border-color:rgba(0,255,220,.4);}
+.mode-btn.draw.active{background:rgba(0,255,220,.12);box-shadow:0 0 18px rgba(0,255,220,.35);}
+.mode-btn.move{color:#ff00aa;border-color:rgba(255,0,170,.4);}
+.mode-btn.move.active{background:rgba(255,0,170,.12);box-shadow:0 0 18px rgba(255,0,170,.35);}
+
+.colors-panel{position:absolute;top:50%;left:20px;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;align-items:center;}
+.cswatch{width:36px;height:36px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:all .2s;}
+.cswatch.active{border-color:#fff;transform:scale(1.2);}
+.cswatch:hover{transform:scale(1.1);}
+
+.action-btns{position:absolute;top:50%;right:20px;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;}
+.act-btn{border:1px solid;padding:9px 16px;font-family:'Share Tech Mono',monospace;font-size:.68rem;letter-spacing:2px;cursor:pointer;transition:all .2s;background:rgba(0,0,0,.5);text-align:center;text-transform:uppercase;min-width:130px;}
+.act-btn.m{color:#ff00ff;border-color:rgba(255,0,255,.4);}
+.act-btn.m.active,.act-btn.m:hover{background:rgba(255,0,255,.12);box-shadow:0 0 16px rgba(255,0,255,.4);}
+.act-btn.g{color:#00ff66;border-color:rgba(0,255,102,.4);}
+.act-btn.g.active,.act-btn.g:hover{background:rgba(0,255,102,.12);box-shadow:0 0 16px rgba(0,255,102,.4);}
+
+.clear-btn{position:absolute;bottom:24px;left:20px;border:1px solid rgba(255,68,68,.45);color:#ff4444;background:rgba(0,0,0,.55);padding:9px 16px;font-family:'Share Tech Mono',monospace;font-size:.7rem;letter-spacing:2px;cursor:pointer;transition:all .2s;text-transform:uppercase;display:flex;align-items:center;gap:8px;backdrop-filter:blur(4px);}
+.clear-btn:hover{background:rgba(255,68,68,.15);box-shadow:0 0 16px rgba(255,68,68,.4);}
+
+.instructions{position:absolute;bottom:24px;right:20px;text-align:right;color:rgba(0,255,220,.35);font-size:.58rem;line-height:2;letter-spacing:1px;}
+.instructions .t{color:rgba(0,255,220,.6);margin-bottom:3px;font-size:.62rem;}
+
+.finger-bar{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.5);border:1px solid rgba(0,255,220,.2);padding:7px 14px;backdrop-filter:blur(4px);}
+.fdot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.12);transition:all .12s;}
+.fdot.on{background:#00ffdc;box-shadow:0 0 8px #00ffdc;}
+
+.drag-obj{position:fixed;z-index:4;font-size:2.2rem;cursor:grab;transition:filter .2s,text-shadow .2s;user-select:none;}
+.drag-obj.grabbed{filter:brightness(2);transform:scale(1.15);}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="hand-canvas"></canvas>
+<canvas id="draw-canvas"></canvas>
+
+<div class="ui">
+  <div class="sys-panel">
+    <div class="sys-label">SİSTEM: OPTİMİZƏ EDİLDİ</div>
+    <div class="sys-status" id="sys-status">MÜŞAHİDƏ</div>
+  </div>
+
+  <div class="mode-bar">
+    <div class="mode-btn draw active" id="btn-draw" onclick="setMode('draw')">✏️ CHIZISH</div>
+    <div class="mode-btn move" id="btn-move" onclick="setMode('move')">✋ SILJITISH</div>
+  </div>
+
+  <div class="colors-panel">
+    <div class="cswatch active" style="background:#00ffdc" data-color="#00ffdc" onclick="setColor(this)"></div>
+    <div class="cswatch" style="background:#ff00aa" data-color="#ff00aa" onclick="setColor(this)"></div>
+    <div class="cswatch" style="background:#ffffff" data-color="#ffffff" onclick="setColor(this)"></div>
+    <div class="cswatch" style="background:#00ff66" data-color="#00ff66" onclick="setColor(this)"></div>
+    <div class="cswatch" style="background:#ffaa00" data-color="#ffaa00" onclick="setColor(this)"></div>
+    <div class="cswatch" style="background:#cc00ff" data-color="#cc00ff" onclick="setColor(this)"></div>
+  </div>
+
+  <div class="action-btns">
+    <div class="act-btn m" onclick="spawnObj('🌍')">🌍 PLANET</div>
+    <div class="act-btn g" onclick="spawnObj('⭐')">⭐ YULDUZ</div>
+    <div class="act-btn g" onclick="spawnObj('🚀')">🚀 RAKETA</div>
+    <div class="act-btn m" onclick="spawnObj('🌙')">🌙 OY</div>
+  </div>
+
+  <div class="clear-btn" onclick="clearDraw()">🗑 TƏMİZLƏ</div>
+
+  <div class="finger-bar">
+    <div class="fdot" id="fd0"></div>
+    <div class="fdot" id="fd1"></div>
+    <div class="fdot" id="fd2"></div>
+    <div class="fdot" id="fd3"></div>
+    <div class="fdot" id="fd4"></div>
+  </div>
+
+  <div class="instructions">
+    <div class="t">[TUTMA MƏNTİQİ]</div>
+    1. Obyektin xəttinə yaxınlaşın<br>
+    2. Baş və şəhadət barmağı sıxın (Pinch)<br>
+    3. XƏTDƏN TUTUB hərəkət etdirin
+  </div>
+</div>
+
+<div id="cursor"><div class="cur-outer"></div><div class="cur-inner"></div></div>
+
+<script>
+// ===== CANVASES =====
+const bgC = document.getElementById('bg-canvas');
+const bgX = bgC.getContext('2d');
+const handC = document.getElementById('hand-canvas');
+const handX = handC.getContext('2d');
+const drawC = document.getElementById('draw-canvas');
+const drawX = drawC.getContext('2d');
+
+function resize(){
+  [bgC,handC,drawC].forEach(c=>{c.width=window.innerWidth;c.height=window.innerHeight;});
+}
+resize();
+window.addEventListener('resize',resize);
+
+// ===== PARTICLES =====
+const PARTICLE_COUNT = 2800;
+const particles = [];
+
+function randColor(){
+  return Math.random()<0.55 ? `hsl(${185+Math.random()*20},100%,${55+Math.random()*20}%)` : `hsl(${45+Math.random()*15},100%,${55+Math.random()*20}%)`;
+}
+
+for(let i=0;i<PARTICLE_COUNT;i++){
+  const angle = Math.random()*Math.PI*2;
+  const r = Math.pow(Math.random(),0.6) * Math.min(window.innerWidth,window.innerHeight) * 0.42;
+  particles.push({
+    x: window.innerWidth/2 + Math.cos(angle)*r,
+    y: window.innerHeight/2 + Math.sin(angle)*r,
+    vx: (Math.random()-.5)*0.35,
+    vy: (Math.random()-.5)*0.35,
+    size: Math.random()*3.5+1,
+    color: randColor(),
+    alpha: Math.random()*0.7+0.3,
+    life: Math.random(),
+    speed: Math.random()*0.004+0.001
+  });
+}
+
+let handPos = {x: window.innerWidth*0.8, y: window.innerHeight*0.5};
+
+function animateParticles(){
+  bgX.fillStyle='rgba(0,0,0,0.18)';
+  bgX.fillRect(0,0,bgC.width,bgC.height);
+
+  particles.forEach(p=>{
+    // Attract toward hand slowly
+    const dx = handPos.x - p.x;
+    const dy = handPos.y - p.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist<300 && dist>0){
+      const force = (300-dist)/300 * 0.012;
+      p.vx += (dx/dist)*force;
+      p.vy += (dy/dist)*force;
+    }
+
+    // Drift back toward center sphere
+    const cdx = window.innerWidth/2 - p.x;
+    const cdy = window.innerHeight/2 - p.y;
+    p.vx += cdx * 0.00003;
+    p.vy += cdy * 0.00003;
+
+    p.vx *= 0.98; p.vy *= 0.98;
+    p.x += p.vx; p.y += p.vy;
+    p.life += p.speed;
+    p.alpha = 0.3 + Math.abs(Math.sin(p.life))*0.6;
+
+    bgX.save();
+    bgX.globalAlpha = p.alpha;
+    bgX.fillStyle = p.color;
+    bgX.fillRect(p.x-p.size/2, p.y-p.size/2, p.size, p.size);
+    bgX.restore();
+  });
+
+  requestAnimationFrame(animateParticles);
+}
+animateParticles();
+
+// ===== HAND SKELETON DRAWING =====
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+function drawNeonHand(lms){
+  handX.clearRect(0,0,handC.width,handC.height);
+  if(!lms||lms.length===0) return;
+
+  const pts = lms.map(l=>({x:l.x*handC.width, y:l.y*handC.height}));
+
+  // Lines — neon cyan glow
+  CONNECTIONS.forEach(([a,b])=>{
+    const p1=pts[a], p2=pts[b];
+
+    handX.save();
+    // Outer glow
+    handX.strokeStyle='rgba(0,255,220,0.1)';
+    handX.lineWidth=10; handX.lineCap='round';
+    handX.shadowColor='#00ffdc'; handX.shadowBlur=20;
+    handX.beginPath(); handX.moveTo(p1.x,p1.y); handX.lineTo(p2.x,p2.y); handX.stroke();
+
+    handX.strokeStyle='rgba(0,255,220,0.4)';
+    handX.lineWidth=4;
+    handX.beginPath(); handX.moveTo(p1.x,p1.y); handX.lineTo(p2.x,p2.y); handX.stroke();
+
+    handX.strokeStyle='rgba(0,255,220,0.9)';
+    handX.lineWidth=1.5; handX.shadowBlur=6;
+    handX.beginPath(); handX.moveTo(p1.x,p1.y); handX.lineTo(p2.x,p2.y); handX.stroke();
+    handX.restore();
+  });
+
+  // Joints — white dots
+  pts.forEach((p,i)=>{
+    const r = [4,8,12,16,20].includes(i) ? 7 : 5;
+    handX.save();
+    handX.shadowColor='#00ffdc'; handX.shadowBlur=12;
+    handX.fillStyle='rgba(0,255,220,0.3)';
+    handX.beginPath(); handX.arc(p.x,p.y,r+4,0,Math.PI*2); handX.fill();
+    handX.fillStyle='#ffffff';
+    handX.beginPath(); handX.arc(p.x,p.y,r,0,Math.PI*2); handX.fill();
+    handX.restore();
+  });
+}
+
+// ===== DRAWING =====
+let mode='draw', drawColor='#00ffdc', prevPt=null, prevPinch=false;
+let grabbedObj=null, grabOff={x:0,y:0};
+const domObjs=[];
+
+const GLOW_MAP = {
+  '#00ffdc':'rgba(0,255,220,',
+  '#ff00aa':'rgba(255,0,170,',
+  '#ffffff':'rgba(255,255,255,',
+  '#00ff66':'rgba(0,255,102,',
+  '#ffaa00':'rgba(255,170,0,',
+  '#cc00ff':'rgba(200,0,255,',
+};
+
+function neonLine(x1,y1,x2,y2,col,sz){
+  const gc=GLOW_MAP[col]||'rgba(0,255,220,';
+  drawX.save();
+  drawX.lineCap='round'; drawX.lineJoin='round';
+  drawX.shadowColor=col;
+  drawX.strokeStyle=gc+'0.12)'; drawX.lineWidth=sz*6; drawX.shadowBlur=30;
+  drawX.beginPath(); drawX.moveTo(x1,y1); drawX.lineTo(x2,y2); drawX.stroke();
+  drawX.strokeStyle=gc+'0.35)'; drawX.lineWidth=sz*3; drawX.shadowBlur=15;
+  drawX.beginPath(); drawX.moveTo(x1,y1); drawX.lineTo(x2,y2); drawX.stroke();
+  drawX.strokeStyle=col; drawX.lineWidth=sz; drawX.shadowBlur=8;
+  drawX.beginPath(); drawX.moveTo(x1,y1); drawX.lineTo(x2,y2); drawX.stroke();
+  drawX.strokeStyle='rgba(255,255,255,0.55)'; drawX.lineWidth=sz*0.25; drawX.shadowBlur=0;
+  drawX.beginPath(); drawX.moveTo(x1,y1); drawX.lineTo(x2,y2); drawX.stroke();
+  drawX.restore();
+}
+
+function clearDraw(){ drawX.clearRect(0,0,drawC.width,drawC.height); }
+
+function setMode(m){
+  mode=m;
+  document.getElementById('btn-draw').classList.toggle('active',m==='draw');
+  document.getElementById('btn-move').classList.toggle('active',m==='move');
+  document.getElementById('sys-status').textContent=m==='draw'?'MÜŞAHİDƏ':'HƏRƏKƏT';
+  prevPt=null;
+}
+
+function setColor(el){
+  document.querySelectorAll('.cswatch').forEach(s=>s.classList.remove('active'));
+  el.classList.add('active'); drawColor=el.dataset.color;
+}
+
+function spawnObj(emoji){
+  const el=document.createElement('div');
+  el.className='drag-obj'; el.textContent=emoji;
+  el.style.left=(20+Math.random()*60)+'%';
+  el.style.top=(20+Math.random()*40)+'%';
+  document.body.appendChild(el);
+  domObjs.push(el);
+}
+
+function closestObj(x,y){
+  let best=null,bd=90;
+  domObjs.forEach(o=>{
+    const r=o.getBoundingClientRect();
+    const d=Math.hypot(x-(r.left+r.width/2),y-(r.top+r.height/2));
+    if(d<bd){bd=d;best=o;}
+  });
+  return best;
+}
+
+// ===== MAIN UPDATE =====
+function update(data){
+  const W=window.innerWidth, H=window.innerHeight;
+  const ax=data.index_tip.x*W, ay=data.index_tip.y*H;
+  const pinch=data.pinch;
+  const f=data.fingers||[0,0,0,0,0];
+
+  // Update hand pos for particles
+  handPos={x:ax,y:ay};
+
+  // Cursor
+  const cur=document.getElementById('cursor');
+  cur.style.left=ax+'px'; cur.style.top=ay+'px';
+  cur.classList.toggle('pinching',pinch);
+
+  // Hand skeleton
+  drawNeonHand(data.landmarks);
+
+  // Finger dots
+  f.forEach((v,i)=>document.getElementById('fd'+i).classList.toggle('on',v===1));
+
+  if(mode==='draw'){
+    const shouldDraw=data.hands>0 && f[1]===1 && f[2]===0 && !pinch;
+    if(shouldDraw && prevPt) neonLine(prevPt.x,prevPt.y,ax,ay,drawColor,3);
+    prevPt = shouldDraw ? {x:ax,y:ay} : null;
+  } else {
+    if(pinch && !prevPinch){
+      grabbedObj=closestObj(ax,ay);
+      if(grabbedObj){
+        grabbedObj.classList.add('grabbed');
+        const r=grabbedObj.getBoundingClientRect();
+        grabOff={x:ax-(r.left+r.width/2),y:ay-(r.top+r.height/2)};
+      }
+    }
+    if(pinch && grabbedObj){
+      grabbedObj.style.left=(ax-grabOff.x-grabbedObj.offsetWidth/2)+'px';
+      grabbedObj.style.top=(ay-grabOff.y-grabbedObj.offsetHeight/2)+'px';
+    }
+    if(!pinch && grabbedObj){
+      grabbedObj.classList.remove('grabbed');
+      grabbedObj=null;
+    }
+  }
+  prevPinch=pinch;
+}
+
+// Init objects
+['🌍','⭐','🚀'].forEach(e=>spawnObj(e));
+
+setInterval(()=>{
+  fetch('/hand_data').then(r=>r.json()).then(update).catch(()=>{});
+},40);
+</script>
+</body>
+</html>
